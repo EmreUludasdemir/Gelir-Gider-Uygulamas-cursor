@@ -1,0 +1,17 @@
+{
+  "name": "gelir-gider-uygulamasi",
+  "private": true,
+  "packageManager": "npm@10.9.0",
+  "workspaces": [
+    "apps/*",
+    "services/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev -w apps/web",
+    "dev:api": "npm run start:dev -w apps/api",
+    "dev:parser": "npm run dev -w services/pdf-parser",
+    "lint": "npm run lint -w apps/web && npm run lint -w apps/api",
+    "format": "npm run format -w apps/web"
+  }
+}
+
