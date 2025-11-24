@@ -1,0 +1,21 @@
+[project]
+name = "pdf-parser-service"
+version = "0.1.0"
+description = "PDF dosyalarından satır bazında işlem çıkarımı yapan FastAPI servisi"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi==0.115.2",
+  "uvicorn[standard]==0.30.6",
+  "pdfminer.six==20231228"
+]
+
+[project.optional-dependencies]
+dev = [
+  "ruff==0.6.8",
+  "pytest==8.3.3"
+]
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
