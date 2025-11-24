@@ -16,4 +16,3 @@ npm run dev:parser
 ```
 
 > Node.js ve Python bağımlılıkları kurulu olmalıdır.
-
