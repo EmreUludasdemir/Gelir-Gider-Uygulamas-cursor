@@ -6,7 +6,8 @@ type ManualTx = {
   description: string;
   amount: number;
   date: string;
-  category: string;
+  categoryLabel: string;
+  currency: string;
   type: "income" | "expense";
 };
 
@@ -19,10 +20,12 @@ export function ManualTransactionForm({ onSubmit }: Props) {
     description: "",
     amount: 0,
     date: new Date().toISOString().slice(0, 10),
-    category: "",
+    categoryLabel: "",
+    currency: "TRY",
     type: "expense"
   });
   const [status, setStatus] = useState<string | null>(null);
+  const [isSubmitting, setSubmitting] = useState(false);
 
   const handleChange = (
     event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
@@ -36,10 +39,24 @@ export function ManualTransactionForm({ onSubmit }: Props) {
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (isSubmitting) return;
+    setSubmitting(true);
     setStatus(null);
-    await onSubmit(form);
-    setStatus("İşlem kaydedildi.");
-    setForm((prev) => ({ ...prev, description: "", amount: 0 }));
+    try {
+      await onSubmit(form);
+      setStatus("İşlem kaydedildi.");
+      setForm((prev) => ({
+        ...prev,
+        description: "",
+        amount: 0,
+        categoryLabel: ""
+      }));
+    } catch (error) {
+      console.error(error);
+      setStatus("Kaydederken hata oluştu.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -88,10 +105,23 @@ export function ManualTransactionForm({ onSubmit }: Props) {
           <input
             className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2"
             required
-            name="category"
-            value={form.category}
+            name="categoryLabel"
+            value={form.categoryLabel}
             onChange={handleChange}
           />
+        </label>
+        <label className="text-sm font-medium text-slate-600">
+          Para Birimi
+          <select
+            className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2"
+            name="currency"
+            value={form.currency}
+            onChange={handleChange}
+          >
+            <option value="TRY">TRY</option>
+            <option value="USD">USD</option>
+            <option value="EUR">EUR</option>
+          </select>
         </label>
         <label className="text-sm font-medium text-slate-600">
           Tür
@@ -109,8 +139,9 @@ export function ManualTransactionForm({ onSubmit }: Props) {
       <button
         type="submit"
         className="w-full rounded-full bg-brand-600 py-2 font-semibold text-white"
+        disabled={isSubmitting}
       >
-        Kaydet
+        {isSubmitting ? "Kaydediliyor..." : "Kaydet"}
       </button>
       {status && (
         <p className="text-center text-sm font-medium text-emerald-600">

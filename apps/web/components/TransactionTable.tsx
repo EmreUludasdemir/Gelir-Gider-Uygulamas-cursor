@@ -10,16 +10,18 @@ export type Transaction = {
   description: string;
   amount: number;
   currency: string;
-  category: string;
+  categoryLabel?: string;
   source: "pdf" | "manual";
   confidence?: number;
+  type: "income" | "expense";
 };
 
 type Props = {
-  transactions: Transaction[];
+  transactions?: Transaction[];
+  isLoading?: boolean;
 };
 
-export function TransactionTable({ transactions }: Props) {
+export function TransactionTable({ transactions = [], isLoading }: Props) {
   const rows = useMemo(
     () =>
       transactions.map((tx) => ({
@@ -47,13 +49,29 @@ export function TransactionTable({ transactions }: Props) {
           </tr>
         </thead>
         <tbody>
+          {isLoading && (
+            <>
+              {Array.from({ length: 4 }).map((_, index) => (
+                <tr key={`skeleton-${index}`} className="border-t border-slate-100">
+                  <td className="px-4 py-3 text-slate-300">•••</td>
+                  <td className="px-4 py-3 text-slate-300">Yükleniyor...</td>
+                  <td className="px-4 py-3 text-slate-300">-</td>
+                  <td className="px-4 py-3 text-right text-slate-300">-</td>
+                  <td className="px-4 py-3 text-right text-slate-300">-</td>
+                  <td className="px-4 py-3 text-right text-slate-300">-</td>
+                </tr>
+              ))}
+            </>
+          )}
           {rows.map((row) => (
             <tr key={row.id} className="border-t border-slate-100">
               <td className="px-4 py-3 text-slate-600">{row.formattedDate}</td>
               <td className="px-4 py-3 font-medium text-slate-900">
                 {row.description}
               </td>
-              <td className="px-4 py-3 text-slate-600">{row.category}</td>
+              <td className="px-4 py-3 text-slate-600">
+                {row.categoryLabel ?? "Belirsiz"}
+              </td>
               <td className="px-4 py-3 text-right font-semibold">
                 {row.formattedAmount}
               </td>

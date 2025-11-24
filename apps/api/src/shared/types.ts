@@ -17,3 +17,37 @@ export interface TransactionEntity {
   createdAt: string;
 }
 
+export interface CategorySummary {
+  category: string;
+  total: number;
+  percentage: number;
+}
+
+export interface RecurringPayment {
+  id: string;
+  description: string;
+  amount: number;
+  nextDate: string;
+  category: string;
+}
+
+export interface DashboardSummary {
+  month: string;
+  totalIncome: number;
+  totalExpense: number;
+  balance: number;
+  changePercentage: number;
+  topCategories: CategorySummary[];
+  recurringPayments: RecurringPayment[];
+}
+
+export interface TransactionSuggestion {
+  id: string;
+  description: string;
+  amount: number;
+  currency: string;
+  detectedCategory?: string;
+  confidence: number;
+  createdAt: string;
+}
+
