@@ -1,0 +1,159 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+}
+
+enum TransactionSource {
+  PDF
+  MANUAL
+}
+
+enum CurrencyCode {
+  TRY
+  USD
+  EUR
+}
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String
+  name         String?
+  defaultCurrency CurrencyCode @default(TRY)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  accounts     Account[]
+  categories   Category[]
+  transactions Transaction[]
+  budgets      Budget[]
+  subscriptions Subscription[]
+}
+
+model Account {
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  name      String
+  provider  String
+  type      String
+  currency  CurrencyCode @default(TRY)
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  transactions Transaction[]
+}
+
+model Category {
+  id        String   @id @default(uuid())
+  name      String
+  type      TransactionType
+  color     String?  @default("#94a3b8")
+  icon      String?  @default("circle")
+  user      User?    @relation(fields: [userId], references: [id])
+  userId    String?
+  parentId  String?
+  createdAt DateTime @default(now())
+
+  transactions Transaction[]
+}
+
+model Transaction {
+  id            String            @id @default(uuid())
+  user          User              @relation(fields: [userId], references: [id])
+  userId        String
+  account       Account           @relation(fields: [accountId], references: [id])
+  accountId     String
+  category      Category?         @relation(fields: [categoryId], references: [id])
+  categoryId    String?
+  description   String
+  amount        Decimal           @db.Decimal(18, 2)
+  currency      CurrencyCode      @default(TRY)
+  type          TransactionType
+  source        TransactionSource
+  confidence    Int               @default(100)
+  occurredAt    DateTime
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  suggestions   CategorySuggestion[]
+}
+
+model CategorySuggestion {
+  id             String       @id @default(uuid())
+  transaction    Transaction  @relation(fields: [transactionId], references: [id])
+  transactionId  String
+  detectedLabel  String?
+  detectedId     String?
+  confidence     Int
+  status         SuggestionStatus @default(PENDING)
+  createdAt      DateTime @default(now())
+  resolvedAt     DateTime?
+  resolvedBy     String?
+}
+
+enum SuggestionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model Subscription {
+  id           String   @id @default(uuid())
+  user         User     @relation(fields: [userId], references: [id])
+  userId       String
+  description  String
+  amount       Decimal  @db.Decimal(18, 2)
+  currency     CurrencyCode @default(TRY)
+  intervalDays Int
+  nextDueDate  DateTime
+  category     Category? @relation(fields: [categoryId], references: [id])
+  categoryId   String?
+  account      Account?  @relation(fields: [accountId], references: [id])
+  accountId    String?
+  createdAt    DateTime  @default(now())
+}
+
+model Budget {
+  id          String   @id @default(uuid())
+  user        User     @relation(fields: [userId], references: [id])
+  userId      String
+  category    Category @relation(fields: [categoryId], references: [id])
+  categoryId  String
+  amount      Decimal  @db.Decimal(18, 2)
+  periodStart DateTime
+  periodEnd   DateTime
+  createdAt   DateTime @default(now())
+}
+
+model RawTransaction {
+  id           String   @id @default(uuid())
+  user         User     @relation(fields: [userId], references: [id])
+  userId       String
+  account      Account? @relation(fields: [accountId], references: [id])
+  accountId    String?
+  payload      Json
+  parsedAt     DateTime @default(now())
+  normalized   Boolean  @default(false)
+  errorMessage String?
+}
+
+model ClassificationLog {
+  id              String   @id @default(uuid())
+  transaction     Transaction @relation(fields: [transactionId], references: [id])
+  transactionId   String
+  engine          String
+  payload         Json
+  confidence      Int
+  createdAt       DateTime @default(now())
+}
+

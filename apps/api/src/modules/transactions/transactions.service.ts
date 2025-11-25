@@ -1,97 +1,112 @@
 import { Injectable } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
+import { Prisma, TransactionType as PrismaTransactionType } from "@prisma/client";
 import {
   DashboardSummary,
   TransactionEntity,
-  TransactionSuggestion
+  TransactionSuggestion,
+  TransactionSource,
+  TransactionType
 } from "../../shared/types";
 import { CreateManualTransactionDto } from "./dto/create-manual-transaction.dto";
 import { QueryTransactionsDto } from "./dto/query-transactions.dto";
+import { PrismaService } from "../../prisma/prisma.service";
 
 @Injectable()
 export class TransactionsService {
-  private transactions: TransactionEntity[] = [];
+  constructor(private readonly prisma: PrismaService) {}
 
-  constructor() {
-    this.seedDemoData();
-  }
-
-  findAll(query?: QueryTransactionsDto): TransactionEntity[] {
-    if (!query) {
-      return this.transactions;
-    }
-    return this.transactions.filter((tx) => {
-      const matchesCategory = query.categoryId
-        ? tx.categoryId === query.categoryId ||
-          tx.categoryLabel?.toLowerCase() === query.categoryId.toLowerCase()
-        : true;
-      const matchesType = query.type ? tx.type === query.type : true;
-      const matchesSource = query.source ? tx.source === query.source : true;
-      const matchesDateFrom = query.dateFrom
-        ? new Date(tx.date) >= new Date(query.dateFrom)
-        : true;
-      const matchesDateTo = query.dateTo
-        ? new Date(tx.date) <= new Date(query.dateTo)
-        : true;
-      return (
-        matchesCategory &&
-        matchesType &&
-        matchesSource &&
-        matchesDateFrom &&
-        matchesDateTo
-      );
+  async findAll(
+    userId: string,
+    query?: QueryTransactionsDto
+  ): Promise<TransactionEntity[]> {
+    const transactions = await this.prisma.transaction.findMany({
+      where: {
+        userId,
+        categoryId: query?.categoryId,
+        type: query?.type
+          ? this.toPrismaType(query.type)
+          : undefined,
+        source: query?.source
+          ? this.toPrismaSource(query.source)
+          : undefined,
+        occurredAt: {
+          gte: query?.dateFrom ? new Date(query.dateFrom) : undefined,
+          lte: query?.dateTo ? new Date(query.dateTo) : undefined
+        }
+      },
+      orderBy: { occurredAt: "desc" },
+      include: { category: true }
     });
+    return transactions.map((record) => this.mapTransaction(record));
   }
 
-  createManual(
+  async createManual(
     payload: CreateManualTransactionDto & { userId: string }
-  ): TransactionEntity {
-    const entity: TransactionEntity = {
-      id: randomUUID(),
-      userId: payload.userId,
-      accountId: payload.accountId ?? "manual-account",
-      date: payload.date,
-      description: payload.description,
-      amount: payload.amount,
-      currency: payload.currency ?? "TRY",
-      source: "manual",
-      type: payload.type,
-      categoryId: payload.categoryId,
-      categoryLabel: payload.categoryLabel,
-      confidence: 100,
-      createdAt: new Date().toISOString()
-    };
-    this.transactions.unshift(entity);
-    return entity;
+  ): Promise<TransactionEntity> {
+    const record = await this.prisma.transaction.create({
+      data: {
+        userId: payload.userId,
+        accountId: payload.accountId ?? undefined,
+        description: payload.description,
+        amount: new Prisma.Decimal(payload.amount),
+        currency: payload.currency ?? "TRY",
+        source: "MANUAL",
+        type: this.toPrismaType(payload.type),
+        categoryId: payload.categoryId,
+        confidence: 100,
+        occurredAt: new Date(payload.date)
+      },
+      include: { category: true }
+    });
+    return this.mapTransaction(record);
   }
 
-  bulkInsert(
+  async bulkInsert(
+    userId: string,
     items: Array<
-      Omit<TransactionEntity, "id" | "createdAt"> & { confidence?: number }
+      Omit<TransactionEntity, "id" | "createdAt" | "userId"> & {
+        confidence?: number;
+        categoryLabel?: string;
+      }
     >
-  ): TransactionEntity[] {
-    const inserted = items.map((item) => ({
-      ...item,
-      id: randomUUID(),
-      createdAt: new Date().toISOString()
-    }));
-    this.transactions = [...inserted, ...this.transactions];
-    return inserted;
+  ): Promise<TransactionEntity[]> {
+    const results = await this.prisma.$transaction(
+      items.map((item) =>
+        this.prisma.transaction.create({
+          data: {
+            userId,
+            accountId: item.accountId ?? undefined,
+            description: item.description,
+            amount: new Prisma.Decimal(item.amount),
+            currency: item.currency ?? "TRY",
+            source: this.toPrismaSource(item.source),
+            type: this.toPrismaType(item.type),
+            categoryId: item.categoryId,
+            confidence: item.confidence ?? 60,
+            occurredAt: new Date(item.date)
+          },
+          include: { category: true }
+        })
+      )
+    );
+    return results.map((record) => this.mapTransaction(record));
   }
 
-  getSummary(): DashboardSummary {
+  async getSummary(userId: string): Promise<DashboardSummary> {
     const now = new Date();
     const month = now.toLocaleDateString("tr-TR", {
       month: "long",
       year: "numeric"
     });
-    const incomes = this.transactions.filter((tx) => tx.type === "income");
-    const expenses = this.transactions.filter((tx) => tx.type === "expense");
+    const transactions = await this.prisma.transaction.findMany({
+      where: { userId },
+      include: { category: true }
+    });
+    const mapped = transactions.map((tx) => this.mapTransaction(tx));
+    const incomes = mapped.filter((tx) => tx.type === "income");
+    const expenses = mapped.filter((tx) => tx.type === "expense");
 
-    const totalIncome = incomes.reduce(
-      (sum, tx) => sum + Math.abs(tx.amount),
-      0
-    );
+    const totalIncome = incomes.reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
     const totalExpense = expenses.reduce(
       (sum, tx) => sum + Math.abs(tx.amount),
       0
@@ -124,26 +139,29 @@ export class TransactionsService {
       balance: Number((totalIncome - totalExpense).toFixed(2)),
       changePercentage: 8.4,
       topCategories,
-      recurringPayments: this.detectRecurringPayments()
+      recurringPayments: this.detectRecurringPayments(mapped)
     };
   }
 
-  getSuggestions(): TransactionSuggestion[] {
-    return this.transactions
-      .filter((tx) => (tx.confidence ?? 100) < 75)
-      .map((tx) => ({
-        id: tx.id,
-        description: tx.description,
-        amount: tx.amount,
-        currency: tx.currency,
-        detectedCategory: tx.categoryLabel,
-        confidence: tx.confidence ?? 0,
-        createdAt: tx.createdAt
-      }));
+  async getSuggestions(userId: string): Promise<TransactionSuggestion[]> {
+    const lowConfidence = await this.prisma.transaction.findMany({
+      where: { userId, confidence: { lt: 75 } },
+      include: { category: true },
+      orderBy: { createdAt: "desc" }
+    });
+    return lowConfidence.map((tx) => ({
+      id: tx.id,
+      description: tx.description,
+      amount: Number(tx.amount),
+      currency: tx.currency,
+      detectedCategory: tx.category?.name,
+      confidence: tx.confidence ?? 0,
+      createdAt: tx.createdAt.toISOString()
+    }));
   }
 
-  private detectRecurringPayments() {
-    const grouped = this.transactions.reduce<Record<string, TransactionEntity[]>>(
+  private detectRecurringPayments(transactions: TransactionEntity[]) {
+    const grouped = transactions.reduce<Record<string, TransactionEntity[]>>(
       (acc, tx) => {
         const key = tx.description.toLowerCase();
         acc[key] = acc[key] ? [...acc[key], tx] : [tx];
@@ -172,70 +190,42 @@ export class TransactionsService {
       });
   }
 
-  private seedDemoData() {
-    if (this.transactions.length) {
-      return;
-    }
-    const today = new Date();
-    const demoData: Array<Omit<TransactionEntity, "id" | "createdAt">> = [
-      {
-        userId: "demo-user",
-        accountId: "akbank",
-        date: today.toISOString(),
-        description: "Spotify",
-        amount: -89.99,
-        currency: "TRY",
-        source: "pdf",
-        type: "expense",
-        categoryId: "subscriptions",
-        categoryLabel: "Abonelik",
-        confidence: 98
-      },
-      {
-        userId: "demo-user",
-        accountId: "garanti",
-        date: new Date(today.getTime() - 86400000).toISOString(),
-        description: "Migros Online",
-        amount: -540.45,
-        currency: "TRY",
-        source: "pdf",
-        type: "expense",
-        categoryId: "groceries",
-        categoryLabel: "Market",
-        confidence: 70
-      },
-      {
-        userId: "demo-user",
-        accountId: "isbank",
-        date: new Date(today.getTime() - 86400000 * 2).toISOString(),
-        description: "Serbest Çalışma Ödemesi",
-        amount: 15000,
-        currency: "TRY",
-        source: "manual",
-        type: "income",
-        categoryId: "income",
-        categoryLabel: "Gelir",
-        confidence: 100
-      },
-      {
-        userId: "demo-user",
-        accountId: "akbank",
-        date: new Date(today.getTime() - 86400000 * 3).toISOString(),
-        description: "Apple Music",
-        amount: -44.99,
-        currency: "TRY",
-        source: "pdf",
-        type: "expense",
-        categoryId: "subscriptions",
-        categoryLabel: "Abonelik",
-        confidence: 60
-      }
-    ];
-    this.transactions = demoData.map((item) => ({
-      ...item,
-      id: randomUUID(),
-      createdAt: new Date().toISOString()
-    }));
+  private mapTransaction(
+    record: Prisma.TransactionGetPayload<{ include: { category: true } }>
+  ): TransactionEntity {
+    return {
+      id: record.id,
+      userId: record.userId,
+      accountId: record.accountId,
+      date: record.occurredAt.toISOString(),
+      description: record.description,
+      amount: Number(record.amount),
+      currency: record.currency,
+      source: this.fromPrismaSource(record.source),
+      type: this.fromPrismaType(record.type),
+      categoryId: record.categoryId ?? undefined,
+      categoryLabel: record.category?.name,
+      confidence: record.confidence ?? undefined,
+      createdAt: record.createdAt.toISOString()
+    };
+  }
+
+  private toPrismaType(type: TransactionType) {
+    return type === "income"
+      ? PrismaTransactionType.INCOME
+      : PrismaTransactionType.EXPENSE;
+  }
+
+  private fromPrismaType(type: PrismaTransactionType): TransactionType {
+    return type === PrismaTransactionType.INCOME ? "income" : "expense";
+  }
+
+  private toPrismaSource(source: TransactionSource) {
+    return source === "manual" ? "MANUAL" : "PDF";
+  }
+
+  private fromPrismaSource(source: string): TransactionSource {
+    return source === "MANUAL" ? "manual" : "pdf";
   }
 }
 
