@@ -93,3 +93,70 @@ export function register(payload: {
     body: JSON.stringify(payload)
   });
 }
+
+export function fetchCategories() {
+  return apiFetch("/categories");
+}
+
+export function createCategory(payload: {
+  name: string;
+  type: "income" | "expense";
+  color?: string;
+}) {
+  return apiFetch("/categories", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function deleteCategory(id: string) {
+  return apiFetch(`/categories/${id}`, {
+    method: "DELETE"
+  });
+}
+
+export function fetchBudgets() {
+  return apiFetch("/budgets");
+}
+
+export function createBudget(payload: {
+  categoryId: string;
+  amount: number;
+  periodStart: string;
+  periodEnd: string;
+}) {
+  return apiFetch("/budgets", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function assignTransactionCategory(payload: {
+  transactionId: string;
+  categoryId: string;
+}) {
+  return apiFetch(`/transactions/${payload.transactionId}/category`, {
+    method: "PATCH",
+    body: JSON.stringify({ categoryId: payload.categoryId })
+  });
+}
+
+export function rejectSuggestion(transactionId: string) {
+  return apiFetch(`/transactions/${transactionId}/reject`, {
+    method: "POST"
+  });
+}
+
+export function fetchNotificationSettings() {
+  return apiFetch("/notification-settings");
+}
+
+export function updateNotificationSettings(payload: {
+  emailSubscriptionReminders?: boolean;
+  emailBudgetAlerts?: boolean;
+}) {
+  return apiFetch("/notification-settings", {
+    method: "PATCH",
+    body: JSON.stringify(payload)
+  });
+}
