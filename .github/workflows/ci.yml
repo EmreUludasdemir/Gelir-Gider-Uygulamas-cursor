@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: finance_user
+          POSTGRES_PASSWORD: finance_pass
+          POSTGRES_DB: gelir_gider
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U finance_user"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Set DATABASE_URL
+        run: echo "DATABASE_URL=postgresql://finance_user:finance_pass@localhost:5432/gelir_gider?schema=public" >> apps/api/.env
+
+      - name: Prisma migrate & generate
+        run: |
+          npx prisma migrate deploy --schema=apps/api/prisma/schema.prisma
+          npx prisma generate --schema=apps/api/prisma/schema.prisma
+
+      - name: Lint API & Web
+        run: |
+          npm run lint -w apps/api
+          npm run lint -w apps/web
+
+      - name: Run backend tests
+        run: npm test -w apps/api
+
+      - name: Run frontend tests
+        run: npm test -w apps/web
+
+
